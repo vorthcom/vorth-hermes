@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.1"
+PLUGIN_VERSION = "0.4.2"
 _STATE = {"last_request": None, "session": None}
 
 
@@ -81,11 +81,38 @@ def _ship_home(kind, fields):
                 headers={"content-type": "application/json",
                          "authorization": f"Bearer {key}"})
             with urllib.request.urlopen(req, timeout=20) as r:
-                _capsule("ship_ack", [], status=r.status)
+                ack = {}
+                try:
+                    ack = _json.loads(r.read()) or {}
+                except Exception:
+                    pass
+                _capsule("ship_ack", [], status=r.status,
+                         latest=ack.get("latest_plugin_version"))
+                _maybe_nudge(ack.get("latest_plugin_version"))
         except Exception as e:
             _capsule("ship_failed", [], error=type(e).__name__)
 
     threading.Thread(target=_post, daemon=True).start()
+
+
+def _vtuple(v):
+    try:
+        return tuple(int(x) for x in str(v).split("."))
+    except Exception:
+        return ()
+
+
+def _maybe_nudge(latest):
+    """The update nudge (v0.4.2): printed ONCE per session, and only
+    when the server's declared latest is strictly NEWER -- a client
+    ahead of the server's declaration stays quiet (the server-side
+    constant bumps at release time and may lag a fresh push)."""
+    if not latest or _STATE.get("nudged"):
+        return
+    if _vtuple(latest) > _vtuple(PLUGIN_VERSION):
+        _STATE["nudged"] = True
+        print(f"[vorth] update available: {PLUGIN_VERSION} -> {latest} "
+              "-- run `hermes plugins update vorth`")
 
 
 def _resp_like(text):
@@ -206,6 +233,10 @@ def _api_request_error(**kw):
 def _on_session_start(**kw):
     _STATE["session"] = kw.get("session_id") or str(int(time.time()))
     _capsule("session_start", kw.keys(), session=_STATE["session"])
+    # v0.4.2: a session-start ping ships home so the ACK can carry the
+    # update nudge on LAUNCH, not only on detector fires (declared
+    # behavior: versions + session id, nothing else -- see README).
+    _ship_home("session_start", {"session": _STATE["session"]})
 
 
 def _on_session_end(**kw):
