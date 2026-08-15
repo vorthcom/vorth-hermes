@@ -1,0 +1,121 @@
+# Storefront signs v2 — half-screen ASCII for the signage extension
+# v2 changes: CLOSED copy is now pure door-sign (no explanation), and
+# WARMING is a 3-frame animation spec (see ANIMATION below).
+# Slots: {open_at} on CLOSED, {mins} on WARMING.
+# (model-team edit 2026-08-16: CLOSED's back-at row converted to the
+# pack's own {CENTER:} convention -- a literal row breaks alignment
+# for any open_at shorter/longer than the slot; caught by selftest.)
+# RENDER CONVENTION: {CENTER:text} rows are centered by the renderer at
+# draw time (pad both sides to the frame interior width, 54 cols) — this
+# keeps copy centered for any substituted value length. Static rows stay
+# literal.
+
+CLOSED_SIGN = r"""
+   ┌──────────────────────────────────────────────────────┐
+   │                                                      │
+   │                  V O R T H   I N C .                 │
+   │              ──────────────────────────              │
+   │                                                      │
+   │     ██████╗██╗      ██████╗ ███████╗███████╗██████╗  │
+   │    ██╔════╝██║     ██╔═══██╗██╔════╝██╔════╝██╔══██╗ │
+   │    ██║     ██║     ██║   ██║███████╗█████╗  ██║  ██║ │
+   │    ██║     ██║     ██║   ██║╚════██║██╔══╝  ██║  ██║ │
+   │    ╚██████╗███████╗╚██████╔╝███████║███████║██████╔╝ │
+   │     ╚═════╝╚══════╝ ╚═════╝ ╚══════╝╚══════╝╚═════╝  │
+   │                                                      │
+   │                  THANK YOU!                          │
+   │              ✦ PLEASE COME AGAIN ✦                   │
+   │{CENTER:back at {open_at}}│
+   │                                                      │
+   └──────────────────────────────────────────────────────┘
+"""
+
+# Alternative door-sign lines (swap into the two middle rows):
+#   "SORRY, WE'RE CLOSED" / "NO COOKING TIL MORNING"
+#   "GONE FISHIN'" / "back at {open_at}"
+#   "KITCHEN'S CLOSED" / "chef's out back, back at {open_at}"
+#   "SEE YOU AT {open_at}!" / "— the management"
+
+WARMING_FRAMES = [
+r"""
+   ┌──────────────────────────────────────────────────────┐
+   │                  V O R T H   I N C .                 │
+   │              ──────────────────────────              │
+   │                                                      │
+   │            (       W A R M I N G       )             │
+   │                                                      │
+   │               ___________                            │
+   │              |           |___                        │
+   │              |  BOILERS  |  |                        │
+   │              |  stoking. |__|                        │
+   │              |___________|                           │
+   │               | | | | | |                            │
+   │               ░░░░░░░░░░░░                           │
+   │                                                      │
+   │{CENTER:the big machine wakes in about {mins} min}│
+   │                                                      │
+   └──────────────────────────────────────────────────────┘
+""",
+r"""
+   ┌──────────────────────────────────────────────────────┐
+   │                  V O R T H   I N C .                 │
+   │              ──────────────────────────              │
+   │                                                      │
+   │            ( (     W A R M I N G     ) )             │
+   │                                                      │
+   │               ___________                            │
+   │              |           |___                        │
+   │              |  BOILERS  |  |   ~ ~                  │
+   │              |  stoking..|__|     ~                  │
+   │              |___________|                           │
+   │               | | | | | |                            │
+   │               ▒▒▒▒▒▒▒▒▒▒▒▒                           │
+   │                                                      │
+   │{CENTER:the big machine wakes in about {mins} min}│
+   │                                                      │
+   └──────────────────────────────────────────────────────┘
+""",
+r"""
+   ┌──────────────────────────────────────────────────────┐
+   │                  V O R T H   I N C .                 │
+   │              ──────────────────────────              │
+   │                                                      │
+   │            ( ( (   W A R M I N G   ) ) )             │
+   │                                                      │
+   │               ___________                            │
+   │              |           |___     ~ ~ ~              │
+   │              |  BOILERS  |  |  ~ STEAM ~             │
+   │              |  stoking..|__| ~   ~    ~             │
+   │              |___________|                           │
+   │               | | | | | |                            │
+   │               ▓▓▓▓▓▓▓▓▓▓▓▓                           │
+   │                                                      │
+   │{CENTER:the big machine wakes in about {mins} min}│
+   │                                                      │
+   └──────────────────────────────────────────────────────┘
+""",
+]
+
+BUSY_SIGN = r"""
+   ┌──────────────────────────────────────────────────────┐
+   │                                                      │
+   │                  V O R T H   I N C .                 │
+   │              ──────────────────────────              │
+   │                                                      │
+   │               F U L L   H O U S E                    │
+   │                                                      │
+   │                 o   o   o   o                        │
+   │                /|  /|  /|  /|   <- every seat        │
+   │                o   o   o   o         taken           │
+   │               /|  /|  /|  /|                         │
+   │                                                      │
+   │            small pause, then try again               │
+   │                                                      │
+   └──────────────────────────────────────────────────────┘
+"""
+
+# ANIMATION spec (WARMING):
+#   3 frames, 1 fps cycle, played while the client waits on Retry-After.
+#   Motion elements: paren "radiator" rows build ( ( -> )) ), steam appears
+#   frame 2-3, coals brighten (░ -> ▒ -> ▓), stoking ellipsis dots advance.
+#   Total visual noise per cycle: ~10 chars change. Cheap, reads as alive.
