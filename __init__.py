@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.0"
+PLUGIN_VERSION = "0.4.1"
 _STATE = {"last_request": None, "session": None}
 
 
@@ -216,7 +216,42 @@ def _on_session_end(**kw):
              failed=kw.get("failed"), completed=kw.get("completed"))
 
 
+def ensure_provider_installed(plugin_dir=None, providers_root=None):
+    """Self-install the model-provider profile (v0.4.1, first-field-
+    install find: `hermes plugins install` delivers ONE directory, but
+    Hermes discovers providers from a SIBLING tree
+    `plugins/model-providers/<name>/` -- so the provider vanished on
+    the first real install). Idempotent: symlink our provider_profile
+    into place (survives `hermes plugins update` automatically); copy
+    as fallback where symlinks fail. Never touches an existing entry
+    that is not ours."""
+    import shutil
+    src = os.path.join(plugin_dir or os.path.dirname(
+        os.path.abspath(__file__)), "provider_profile")
+    if not os.path.isdir(src):
+        return "no_profile_shipped"
+    root = providers_root or os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "model-providers")
+    dst = os.path.join(root, "vorth")
+    if os.path.islink(dst) or os.path.isdir(dst):
+        return "present"
+    try:
+        os.makedirs(root, exist_ok=True)
+        try:
+            os.symlink(src, dst)
+            return "linked"
+        except OSError:
+            shutil.copytree(src, dst)
+            return "copied"
+    except Exception as e:                      # never break plugin load
+        return f"failed:{type(e).__name__}"
+
+
 def register(ctx) -> None:
+    installed = ensure_provider_installed()
+    if installed in ("linked", "copied"):
+        print(f"[vorth] provider profile self-installed ({installed}) "
+              "-> restart hermes once to pick it up")
     ctx.register_hook("pre_api_request", _pre_api_request)
     ctx.register_hook("post_api_request", _post_api_request)
     ctx.register_hook("transform_llm_output", _transform_llm_output)

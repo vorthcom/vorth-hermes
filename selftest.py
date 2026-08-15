@@ -79,10 +79,26 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.0"
+          plug.PLUGIN_VERSION == "0.4.1"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")
+
+# -- provider self-install (v0.4.1, first-field-install find) --------------
+import tempfile                                             # noqa: E402
+with tempfile.TemporaryDirectory() as td:
+    root = os.path.join(td, "model-providers")
+    r1 = plug.ensure_provider_installed(plugin_dir=HERE, providers_root=root)
+    r2 = plug.ensure_provider_installed(plugin_dir=HERE, providers_root=root)
+    check("provider profile self-installs into model-providers/",
+          r1 in ("linked", "copied")
+          and os.path.exists(os.path.join(root, "vorth")), r1)
+    check("second call is idempotent (present, nothing touched)",
+          r2 == "present", r2)
+    check("missing shipped profile is reported, never fatal",
+          plug.ensure_provider_installed(
+              plugin_dir=td, providers_root=root + "2")
+          == "no_profile_shipped")
 
 print(f"PLUGIN SELFTEST {P} PASS / {F} FAIL")
 sys.exit(1 if F else 0)

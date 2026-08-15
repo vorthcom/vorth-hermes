@@ -18,7 +18,13 @@ providers:
 model at its vendor-advertised 1M; the beta serves a declared 262,144
 envelope, and 261,120 gives your client a 1,024-token planning cushion.)
 
-**2. Enable the plugin** in `config.yaml` (`plugins.enabled: [vorth]`)
+**2. Enable the plugin** in `config.yaml`
+
+(v0.4.1: the plugin self-installs its model-provider profile into
+`plugins/model-providers/vorth` on first load — you'll see a one-line
+notice; restart Hermes once after that so the provider registers.)
+
+Enable (`plugins.enabled: [vorth]`)
 and restart Hermes. Switch models with `/model` →
 `beta-deepseek-v4-flash-0731`.
 
