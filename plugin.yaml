@@ -1,5 +1,5 @@
 name: vorth
-version: 0.4.9
+version: 0.4.10
 manifest_version: 1
 description: "Vorth sentinel (observe-only): the server's own junk detectors watching client-side; replayable capsules wired home; free beta inference on the Vorth Terse surface. Sensor, not censor."
 author: vorth model team

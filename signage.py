@@ -202,24 +202,18 @@ def reveal(text, budget_s=8.0, out=None, sleep=None):
     out = out or _sys.stdout
     sleep = sleep or _t.sleep
     lines = text.split("\n")
-    typed = [i for i, ln in enumerate(lines) if "....." in ln]
-    plain = [i for i in range(len(lines)) if i not in typed]
-    n_chunks = max(1, len(plain))
-    typed_chars = sum(len(lines[i].rstrip()) for i in typed)
-    # split the budget: ~60% chunk cadence, ~40% typing
-    chunk_dt = (budget_s * 0.6) / n_chunks
-    char_dt = (budget_s * 0.4) / max(1, typed_chars)
+    # v0.4.10: LINE-ATOMIC ONLY. The per-character typing was field-
+    # mangled: Hermes repaints its status line concurrently, and slow
+    # mid-line writes gave it a window to stomp the handshake rows
+    # (owner's screenshot: bordered lines survived, typed lines
+    # shredded). Whole lines are the largest write a contested terminal
+    # renders reliably; the retro lives in the cadence alone now.
+    dt = budget_s / max(1, len(lines))
     for i, ln in enumerate(lines):
-        if i in typed:
-            for ch in ln.rstrip():
-                out.write(ch)
-                out.flush()
-                sleep(char_dt)
-            out.write("\n")
-        else:
-            out.write(ln + "\n")
-            out.flush()
-            sleep(chunk_dt)
+        out.write(ln + "\n")
+        out.flush()
+        if i < len(lines) - 1:
+            sleep(dt)
 
 
 def animate_frames(frames, cycles=2, frame_dt=0.7, out=None, sleep=None,
@@ -246,23 +240,27 @@ def animate_frames(frames, cycles=2, frame_dt=0.7, out=None, sleep=None,
     out.write("\n")
 
 
-def welcome_once(marker_path, term_cols, term_lines, is_tty,
-                 out=None, sleep=None):
-    """The BBS welcome: ONCE per client, first successful connection
-    (pack v2: 'the joke dies if it plays twice'). Marker file is the
-    memory; small/non-TTY stages get the one-liner, which also burns
-    the once. Returns what was shown: 'sign' | 'line' | None."""
+def welcome_daily(marker_path, term_cols, term_lines, is_tty,
+                  out=None, sleep=None, today=None):
+    """The BBS welcome, v0.4.10 (owner): ONCE PER DAY, at connect time
+    -- session start, the quiet moment before Hermes paints. The marker
+    stores the last-shown date; a new day replays the performance.
+    Small/non-TTY stages get the one-liner, which also burns the day.
+    Returns 'sign' | 'line' | None."""
     import os as _os
-    if _os.path.exists(marker_path):
-        return None
+    import time as _time
+    today = today or _time.strftime("%Y%m%d")
     try:
-        open(marker_path, "w").write(str(int(__import__("time").time())))
+        if _os.path.exists(marker_path) \
+                and open(marker_path).read().strip() == today:
+            return None
+        open(marker_path, "w").write(today)
     except OSError:
         return None            # cannot remember == never perform
     if is_tty and term_cols >= MIN_COLS and term_lines >= MIN_LINES:
         sign = load_sign("WELCOME_BBS")
         if sign:
-            reveal("\n" + sign, budget_s=8.0, out=out, sleep=sleep)
+            reveal("\n" + sign, budget_s=3.0, out=out, sleep=sleep)
             return "sign"
     (out or __import__("sys").stdout).write(
         "Connected to Vorth -- welcome, operator.\n")

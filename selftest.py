@@ -93,20 +93,36 @@ check("reveal() delivers the complete sign (chunked, typed, lossless)",
 import tempfile as _tf                                      # noqa: E402
 with _tf.TemporaryDirectory() as td2:
     mk = os.path.join(td2, ".welcomed")
-    b1, b2 = io.StringIO(), io.StringIO()
-    r1 = signage.welcome_once(mk, 100, 40, True, out=b1,
-                              sleep=lambda s: None)
-    r2 = signage.welcome_once(mk, 100, 40, True, out=b2,
-                              sleep=lambda s: None)
-    check("welcome plays ONCE (sign, then never again -- the joke dies "
-          "if it plays twice)",
-          r1 == "sign" and r2 is None and b2.getvalue() == "")
+    b1, b2, b3 = io.StringIO(), io.StringIO(), io.StringIO()
+    r1 = signage.welcome_daily(mk, 100, 40, True, out=b1,
+                               sleep=lambda s: None, today="20260816")
+    r2 = signage.welcome_daily(mk, 100, 40, True, out=b2,
+                               sleep=lambda s: None, today="20260816")
+    r3 = signage.welcome_daily(mk, 100, 40, True, out=b3,
+                               sleep=lambda s: None, today="20260817")
+    check("welcome plays ONCE PER DAY (again same day: silent; new day: "
+          "encore)", r1 == "sign" and r2 is None and b2.getvalue() == ""
+          and r3 == "sign")
     mk2 = os.path.join(td2, ".welcomed2")
-    b3 = io.StringIO()
-    r3 = signage.welcome_once(mk2, 50, 12, True, out=b3,
-                              sleep=lambda s: None)
-    check("small terminal: one-liner welcome, once also burned",
-          r3 == "line" and "operator" in b3.getvalue())
+    b4 = io.StringIO()
+    r4 = signage.welcome_daily(mk2, 50, 12, True, out=b4,
+                               sleep=lambda s: None)
+    check("small terminal: one-liner welcome, day also burned",
+          r4 == "line" and "operator" in b4.getvalue())
+    # LINE-ATOMIC invariant (the mangling fix): every write ends in \n
+    class _W:
+        def __init__(self):
+            self.calls = []
+
+        def write(self, s):
+            self.calls.append(s)
+
+        def flush(self):
+            pass
+    w = _W()
+    signage.reveal("A\nB\nC", budget_s=0.01, out=w, sleep=lambda s: None)
+    check("reveal writes are LINE-ATOMIC (no mid-line stomping window)",
+          all(c.endswith("\n") for c in w.calls), str(w.calls))
 
 # -- the boiler animation (v0.4.9): in-place cycle, lossless, aligned -----
 bufA = io.StringIO()
@@ -167,7 +183,7 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.9"
+          plug.PLUGIN_VERSION == "0.4.10"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")

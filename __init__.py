@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.9"
+PLUGIN_VERSION = "0.4.10"
 _STATE = {"last_request": None, "session": None}
 
 def _plant_walkin(env_path=None):
@@ -168,24 +168,34 @@ def _pre_api_request(**kw):
         pass
 
 
-def _welcome_if_first(kw):
-    """Pack v2's BBS welcome: after the FIRST successful vorth response
-    ever on this client (marker in the outbox dir). 'Successful' is the
-    gate -- a walk-in bouncing off the maitre d' has not connected."""
+def _vorth_is_configured_provider():
+    """Cheap check that this Hermes points at vorth (config text scan;
+    fenced -- a parse failure means no welcome, never a crash)."""
     try:
-        if not (kw.get("response") or kw.get("assistant_message")):
-            return             # no payload = not a successful connection
-        model = str(kw.get("model") or "")
-        provider = str(kw.get("provider") or "")
-        if "vorth" not in provider and "deepseek-v4-flash" not in model:
+        cfg = (Path(os.environ.get("HERMES_HOME")
+                    or Path.home() / ".hermes") / "config.yaml")
+        text = cfg.read_text() if cfg.exists() else ""
+        return ("provider: vorth" in text
+                or "beta-deepseek-v4-flash" in text)
+    except Exception:
+        return False
+
+
+def _welcome_daily_at_connect():
+    """v0.4.10 (owner): the BBS welcome plays ONCE PER DAY at connect
+    time -- session start, before Hermes's status line starts painting
+    (the post-response placement got the typed rows stomped by
+    concurrent repaints; see signage.reveal)."""
+    try:
+        if not _vorth_is_configured_provider():
             return
         import shutil
         import sys as _sys
         from . import signage
         marker = _outbox().parent / ".welcomed"
         size = shutil.get_terminal_size((80, 24))
-        signage.welcome_once(str(marker), size.columns, size.lines,
-                             _sys.stdout.isatty())
+        signage.welcome_daily(str(marker), size.columns, size.lines,
+                              _sys.stdout.isatty())
     except Exception:
         pass
 
@@ -195,7 +205,6 @@ def _post_api_request(**kw):
         _capsule("post_api_request", kw.keys(),
                  usage=kw.get("usage") or kw.get("token_buckets"),
                  model=kw.get("model"), provider=kw.get("provider"))
-        _welcome_if_first(kw)
         # v0.2.1 (payload survey, Tom's box 2026-08-15): detection LIVES
         # HERE -- transform_llm_output never fires in his loop, but this
         # hook fires every turn with the full assistant payload.
@@ -289,6 +298,7 @@ def _api_request_error(**kw):
 def _on_session_start(**kw):
     _STATE["session"] = kw.get("session_id") or str(int(time.time()))
     _capsule("session_start", kw.keys(), session=_STATE["session"])
+    _welcome_daily_at_connect()
     # v0.4.2: a session-start ping ships home so the ACK can carry the
     # update nudge on LAUNCH, not only on detector fires (declared
     # behavior: versions + session id, nothing else -- see README).
