@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.10"
+PLUGIN_VERSION = "0.4.11"
 _STATE = {"last_request": None, "session": None}
 
 def _plant_walkin(env_path=None):
@@ -154,6 +154,30 @@ def _resp_like(text):
                                      "content": text}}]}
 
 
+def _minimize_request(req, tail=2, max_chars=4000):
+    """v0.4.11 EVIDENCE MINIMIZATION for the SHIPPED copy (the local
+    outbox keeps the full capsule -- your box, your data). Measured
+    driver: capsules averaged 218KB because they carried the FULL agent
+    context; the detectors need almost none of it (d1/d2/d5 use only
+    the response; d4 echoes the RECENT prompt). Ship the last `tail`
+    messages, content-truncated, plus honest counts. This is also the
+    privacy floor for external users -- one mechanism, both jobs."""
+    try:
+        msgs = (req or {}).get("messages") or []
+        out = []
+        for m in msgs[-tail:]:
+            mm = dict(m) if isinstance(m, dict) else {"raw": str(m)[:200]}
+            c = mm.get("content")
+            if isinstance(c, str) and len(c) > max_chars:
+                mm["content"] = c[:max_chars] + "...[truncated]"
+            out.append(mm)
+        return {"messages": out,
+                "n_messages_total": len(msgs),
+                "_evidence": "minimized_v1"}
+    except Exception:
+        return {"_evidence": "minimize_failed"}
+
+
 # ---- hooks (all observe-only; all **kwargs; all fenced) -------------------
 def _pre_api_request(**kw):
     try:
@@ -208,22 +232,65 @@ def _post_api_request(**kw):
         # v0.2.1 (payload survey, Tom's box 2026-08-15): detection LIVES
         # HERE -- transform_llm_output never fires in his loop, but this
         # hook fires every turn with the full assistant payload.
-        resp = kw.get("response")
+        #
+        # v0.4.11 ASSEMBLY FIX (first corpus review: 525/526 client
+        # d1_empty fires were TOOL-CALL TURNS -- the assembled response
+        # lost tool_calls and finish_reason, so healthy tool-using turns
+        # looked like empty answers; every one replay-"verified" because
+        # replay reproduces honest mistakes). The call site
+        # (conversation_loop.py:6262) passes assistant_tool_call_count
+        # and finish_reason as TOP-LEVEL kwargs, and assistant_message
+        # is an OBJECT (getattr, not dict). Assemble from the
+        # authoritative fields.
         am = kw.get("assistant_message")
-        if not resp and isinstance(am, dict):
-            resp = {"choices": [{"index": 0, "message": am,
-                                 "finish_reason": kw.get("finish_reason")}]}
-        elif not resp and isinstance(am, str):
-            resp = _resp_like(am)
+        content = (getattr(am, "content", None) if am is not None
+                   else None)
+        if isinstance(am, dict):
+            content = am.get("content")
+        elif isinstance(am, str):
+            content = am
+        raw_tcs = (getattr(am, "tool_calls", None)
+                   or (am.get("tool_calls") if isinstance(am, dict)
+                       else None) or [])
+        tcs, placeholders = [], False
+        for t in raw_tcs:
+            try:
+                fn = (t.get("function") if isinstance(t, dict)
+                      else getattr(t, "function", None))
+                name = (fn.get("name") if isinstance(fn, dict)
+                        else getattr(fn, "name", None))
+                args = (fn.get("arguments") if isinstance(fn, dict)
+                        else getattr(fn, "arguments", None))
+                tcs.append({"type": "function",
+                            "function": {"name": name,
+                                         "arguments": args}})
+            except Exception:
+                placeholders = True
+        tc_count = kw.get("assistant_tool_call_count")
+        if tc_count and not tcs:
+            # count known but calls unextractable: placeholders mark
+            # tool-presence for d1 -- and NO d3 claim may come from
+            # them (no evidence, no claim; real d3 runs pre_tool_call)
+            tcs = [{"type": "function"}] * int(tc_count)
+            placeholders = True
+        msg = {"role": "assistant", "content": content}
+        if tcs:
+            msg["tool_calls"] = tcs
+        resp = {"choices": [{"index": 0, "message": msg,
+                             "finish_reason": kw.get("finish_reason")}]}
         if resp:
             req = _STATE.get("last_request") or {}
             events = detect_all(req, resp)
+            if placeholders:
+                events = [e for e in events
+                          if e.get("detector") != "d3_malformed_tool_call"]
             if events:
                 cap = dict(events=events, request_captured=bool(req),
                            request=req, response=resp,
                            finish_reason=kw.get("finish_reason"))
                 _capsule("detector_fire", kw.keys(), **cap)
-                _ship_home("detector_fire", cap)
+                _ship_home("detector_fire",
+                           {**cap, "request": _minimize_request(req)})
     except Exception:
         pass
 
@@ -243,7 +310,8 @@ def _transform_llm_output(text=None, **kw):
                            # capsule is only as good as its reproduction
                            request=req, response=_resp_like(text))
                 _capsule("detector_fire", kw.keys(), **cap)
-                _ship_home("detector_fire", cap)
+                _ship_home("detector_fire",
+                           {**cap, "request": _minimize_request(req)})
     except Exception:
         pass
     return None

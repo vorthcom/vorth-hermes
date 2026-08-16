@@ -174,6 +174,24 @@ with _tf.TemporaryDirectory() as td3:
     else:
         os.environ.pop("VORTH_API_KEY", None)
 
+# -- de-noise hook (v0.4.11, specimen-proven contract) ---------------------
+r = signage._transform_api_error_classification(
+    error_message="🏪 Sorry, we're CLOSED -- thank you, please come "
+                  "again! Doors open at 15:00 NZST.", status_code=503)
+check("closed error -> non-retryable classification with short message",
+      isinstance(r, dict) and r["retryable"] is False
+      and r["reason"] == "server_error" and "15:00 NZST" in r["message"],
+      str(r))
+r = signage._transform_api_error_classification(
+    error_message="do you have a reservation?", error_code="reservation_required")
+check("reservation -> auth_permanent non-retryable",
+      isinstance(r, dict) and r["reason"] == "auth_permanent"
+      and r["retryable"] is False)
+r = signage._transform_api_error_classification(
+    error_message="some ordinary provider explosion", status_code=500)
+check("unrecognized errors DECLINED (built-in classifier untouched)",
+      r is None)
+
 # -- sentinel core intact ---------------------------------------------------
 _spec2 = _il.spec_from_file_location(
     "vorth_plugin_pkg", os.path.join(HERE, "__init__.py"),
@@ -183,7 +201,7 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.10"
+          plug.PLUGIN_VERSION == "0.4.11"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")
@@ -229,6 +247,48 @@ with tempfile.TemporaryDirectory() as td:
           plug.ensure_provider_installed(
               plugin_dir=td, providers_root=root + "2")
           == "no_profile_shipped")
+
+# -- v0.4.11: the tool-call assembly fix (the 525-FP class) ---------------
+class _AM:                       # assistant_message is an OBJECT upstream
+    content = None
+    tool_calls = None
+
+
+with tempfile.TemporaryDirectory() as td5:
+    os.environ["VORTH_CAPSULE_DIR"] = td5
+
+    def fires():
+        import glob as _g
+        n = 0
+        for p in _g.glob(os.path.join(td5, "*.jsonl")):
+            n += sum(1 for ln in open(p)
+                     if '"capsule": "detector_fire"' in ln)
+        return n
+
+    plug._STATE["last_request"] = {"messages": [
+        {"role": "user", "content": "do the thing"}]}
+    plug._post_api_request(assistant_message=_AM(),
+                           assistant_tool_call_count=2,
+                           finish_reason="tool_calls",
+                           model="deepseek-v4-flash", provider="vorth")
+    check("TOOL-CALL turn (content None + 2 tool calls) -> NO d1 fire "
+          "(the 525-FP class, dead)", fires() == 0)
+    plug._post_api_request(assistant_message=_AM(),
+                           assistant_tool_call_count=0,
+                           finish_reason="stop",
+                           model="deepseek-v4-flash", provider="vorth")
+    check("GENUINE empty (no content, no tool calls, finish=stop) -> "
+          "d1 fires", fires() == 1)
+    os.environ.pop("VORTH_CAPSULE_DIR", None)
+
+# -- v0.4.11: shipped-copy evidence minimization ---------------------------
+big = {"messages": [{"role": "user", "content": "x" * 9000}] * 30}
+m = plug._minimize_request(big)
+import json as _json
+check("shipped request evidence: last-2 tail, truncated, counted, marked",
+      len(m["messages"]) == 2 and m["n_messages_total"] == 30
+      and m["_evidence"] == "minimized_v1"
+      and len(_json.dumps(m)) < 12000, f"{len(_json.dumps(m))}B")
 
 print(f"PLUGIN SELFTEST {P} PASS / {F} FAIL")
 sys.exit(1 if F else 0)

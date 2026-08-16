@@ -320,32 +320,38 @@ def _api_request_error(**kw):
 
 
 def _transform_api_error_classification(**kw):
-    """De-noise attempt (discovery-mode): a CLOSED shop is not a
-    transient fault -- retrying it 3x is pure noise. If the payload
-    hands us a dict with a recognizable retry switch AND the error is
-    closed-shaped, flip it off and shorten the message. Acts ONLY on
-    confident parses; otherwise observes and surveys."""
+    """The de-noise, v0.4.11 -- written against SPECIMENS at last (the
+    survey capsules mapped the real contract: FLAT kwargs
+    error_message/error_code/status_code, return None to decline or
+    {"reason": <FailoverReason name>, **ClassifiedError overrides};
+    consulted BEFORE Hermes's built-in classifier, first valid wins,
+    malformed returns dropped by the helper).
+
+    Operational refusals are DETERMINISTIC states, not transient
+    faults: retrying a closed shop 3x is pure noise. Classify them
+    non-retryable with a one-line message; the big signs (error hook)
+    still play. Anything unrecognized: decline, survey, touch nothing."""
     try:
         _survey("signage_error_classification", kw)
-        cls = kw.get("classification")
-        if not isinstance(cls, dict):
-            return None
-        text = " ".join(str(v) for v in cls.values()
-                        if isinstance(v, str))
+        text = " ".join(str(kw.get(k) or "")
+                        for k in ("error_message", "error_code",
+                                  "error_body"))
+        if _is_reservation(text):
+            return {"reason": "auth_permanent", "retryable": False,
+                    "message": ("\U0001f3a9 reservation required -- "
+                                "vorth.com/reservation")}
         open_at = _closed_open_at(text)
-        if not open_at:
-            return None
-        out = dict(cls)
-        for flag in ("retryable", "should_retry", "retry"):
-            if flag in out:
-                out[flag] = False
-        for fld in ("message", "detail"):
-            if isinstance(out.get(fld), str):
-                out[fld] = (f"\U0001f3ea CLOSED -- doors open at "
-                            f"{open_at} (see sign)")
-        return out
+        if open_at:
+            return {"reason": "server_error", "retryable": False,
+                    "message": (f"\U0001f3ea CLOSED -- doors open at "
+                                f"{open_at} (sign above)")}
+        if "machine is waking" in text or "warming_up" in text:
+            return {"reason": "overloaded", "retryable": False,
+                    "message": ("⚡ warming (~5 min) -- resend in a "
+                                "few minutes (sign above)")}
     except Exception:
-        return None
+        pass
+    return None
 
 
 def register(ctx, capsule=None, ship=None):
