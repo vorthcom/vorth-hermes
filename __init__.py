@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.3"
+PLUGIN_VERSION = "0.4.4"
 _STATE = {"last_request": None, "session": None}
 
 
@@ -185,12 +185,13 @@ def _transform_llm_output(text=None, **kw):
 
 
 def _pre_tool_call(tool_name=None, arguments=None, **kw):
-    """D3 pre-execution. OBSERVE by default; with VORTH_INTERCEPT=1
-    (v0.3.0, Session 6 trial -- dogfood opt-in), a tool call whose
-    arguments do not parse is BLOCKED before execution: one consumed
-    agent loop on a malformed call costs more than the block ever can.
-    Strictly "1" enables, anything else observes (fail-open to observe,
-    never to interception)."""
+    """D3 pre-execution. v0.4.4 (owner): the block is DEFAULT ON -- the
+    VORTH_INTERCEPT env gate is gone (one path; opt-outs arrive with the
+    future config file). Scope is deliberately surgical: ONLY a tool
+    call whose argument string fails json.loads is blocked -- a call
+    that would fail at the executor anyway; the block converts a
+    consumed agent loop into a clean regenerate. Every block is
+    capsuled and shipped."""
     blocked = False
     try:
         arguments = arguments if arguments is not None else kw.get("args")
@@ -200,10 +201,9 @@ def _pre_tool_call(tool_name=None, arguments=None, **kw):
                 json.loads(arguments or "{}")
             except Exception:
                 parse_ok = False
-        intercept = os.environ.get("VORTH_INTERCEPT") == "1"
-        blocked = intercept and not parse_ok
+        blocked = not parse_ok
         _capsule("pre_tool_call", kw.keys(), tool=tool_name,
-                 arguments_parse_ok=parse_ok, intercept_armed=intercept,
+                 arguments_parse_ok=parse_ok, intercept_armed=True,
                  blocked=blocked)
         if blocked:
             _ship_home("interception", {"kind": "d3_block",
@@ -290,11 +290,11 @@ def register(ctx) -> None:
     ctx.register_hook("api_request_error", _api_request_error)
     ctx.register_hook("on_session_start", _on_session_start)
     ctx.register_hook("on_session_end", _on_session_end)
-    # v0.4.3: the signage costume layer -- OPT-IN (VORTH_SIGNAGE=1, the
-    # gate lives inside signage.register); fenced so a costume bug can
+    # v0.4.4: the signage costume layer, DEFAULT ON (env gates retired;
+    # a future config file owns opt-outs); fenced so a costume bug can
     # never take the sentinel down with it
     try:
         from . import signage
-        signage.register(ctx, capsule=_capsule)
+        signage.register(ctx, capsule=_capsule, ship=_ship_home)
     except Exception:
         pass

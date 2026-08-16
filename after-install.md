@@ -40,6 +40,9 @@ free: your sessions are the sensor network.
 
 Updating later: `hermes plugins update vorth` (or the dashboard button).
 
-Optional fun: `VORTH_SIGNAGE=1` enables the front-of-house costumes:
-the big CLOSED door-sign on closed-hours refusals (terminal ≥ 60×18),
-one-liner fallbacks otherwise. Copy desk at the top of `signage.py`.
+Front-of-house costumes are ON by default (v0.4.4): the big CLOSED
+door-sign on closed-hours refusals (terminal ≥ 60×18), one-liner
+fallbacks otherwise. The malformed-tool-call block is also on by
+default (it blocks only argument strings that fail JSON parsing — calls
+that would fail at the executor anyway). No env gates; opt-outs arrive
+with the config file. Copy desk at the top of `signage.py`.

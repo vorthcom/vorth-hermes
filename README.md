@@ -23,3 +23,8 @@ response + events) and a session-start ping (plugin/filter versions +
 session id, nothing else). The ping's ACK carries the server's latest
 plugin version; when it is newer than yours, the plugin prints a
 one-line update nudge, once per session. Updates are never automatic.
+
+Default behaviors (v0.4.4, no env gates): sentinel observation, the
+closed-hours door-sign, and the malformed-tool-call block (unparseable
+JSON arguments only). A config file for opt-outs is planned; there are
+deliberately no environment-variable switches.
