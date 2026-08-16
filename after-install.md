@@ -4,6 +4,16 @@ Two steps and you're live on the beta:
 
 **1. Add the provider to your `config.yaml`:**
 
+```yaml
+model:
+  default: beta-deepseek-v4-flash-0731
+  provider: vorth
+```
+
+(The `provider:` line matters even keyless: it is what tells Hermes's
+first-run check that you are configured, so walk-ins launch without any
+key at all.)
+
 No key yet? Just launch — keyless installs browse as walk-ins
 automatically, and the maître d' explains reservations when you knock
 (vorth.com/reservation).
