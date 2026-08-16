@@ -10,6 +10,18 @@ OpenAI-compatible client already sends. The gateway checks it. Clients
 never see infrastructure credentials (v0.1.0 briefly asked for Modal
 proxy secrets; that was the wrong trust shape and is gone).
 """
+import os
+
+# WALK-INS WELCOME (v0.4.5, owner): a missing or empty key defaults to
+# the walk-in identity, HERE -- this module executes during Hermes's
+# provider discovery, which is exactly the scan that otherwise concludes
+# "no API keys or providers found" and shunts a keyless install into
+# setup. With the default, keyless launches work end-to-end: the door
+# answers 401 reservation_required and the maitre d' explains
+# (vorth.com/reservation). A real key in the env always wins.
+if not os.environ.get("VORTH_API_KEY"):
+    os.environ["VORTH_API_KEY"] = "vorth-walkin"
+
 from providers import register_provider
 from providers.base import ProviderProfile
 

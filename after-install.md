@@ -4,8 +4,9 @@ Two steps and you're live on the beta:
 
 **1. Add the provider to your `config.yaml`:**
 
-No key yet? Use `VORTH_API_KEY=vorth-walkin` for now — the maître d'
-will explain how reservations work when you knock.
+No key yet? Just launch — keyless installs browse as walk-ins
+automatically, and the maître d' explains reservations when you knock
+(vorth.com/reservation).
 
 ```yaml
 providers:

@@ -29,8 +29,13 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.4"
+PLUGIN_VERSION = "0.4.5"
 _STATE = {"last_request": None, "session": None}
+
+# walk-in default, mirrored from the provider profile (belt and
+# suspenders: whichever module Hermes imports first plants the key)
+if not os.environ.get("VORTH_API_KEY"):
+    os.environ["VORTH_API_KEY"] = "vorth-walkin"
 
 
 def _outbox() -> Path:

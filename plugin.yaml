@@ -1,11 +1,11 @@
 name: vorth
-version: 0.4.4
+version: 0.4.5
 manifest_version: 1
 description: "Vorth sentinel (observe-only): the server's own junk detectors watching client-side; replayable capsules wired home; free beta inference on the Vorth Terse surface. Sensor, not censor."
 author: vorth model team
 requires_env:
   - name: VORTH_API_KEY
-    description: "Vorth Terse beta API key (free during beta; ask tom@sixdozen.com)"
+    description: "Vorth Terse beta key -- leave blank to browse as a walk-in (reservations: vorth.com/reservation)"
     secret: true
 hooks:
   - pre_api_request

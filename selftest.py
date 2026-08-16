@@ -79,10 +79,36 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.4"
+          plug.PLUGIN_VERSION == "0.4.5"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")
+
+# -- walk-in default (v0.4.5): keyless import plants the identity ----------
+saved = os.environ.pop("VORTH_API_KEY", None)
+import importlib as _importlib
+_spec3 = _il.spec_from_file_location(
+    "vorth_plugin_keyless", os.path.join(HERE, "__init__.py"),
+    submodule_search_locations=[HERE])
+_p3 = _il.module_from_spec(_spec3)
+sys.modules["vorth_plugin_keyless"] = _p3
+_spec3.loader.exec_module(_p3)
+check("keyless import defaults VORTH_API_KEY to vorth-walkin",
+      os.environ.get("VORTH_API_KEY") == "vorth-walkin")
+os.environ.pop("VORTH_API_KEY", None)
+os.environ["VORTH_API_KEY"] = "real-key-untouched"
+_spec4 = _il.spec_from_file_location(
+    "vorth_plugin_keyed", os.path.join(HERE, "__init__.py"),
+    submodule_search_locations=[HERE])
+_p4 = _il.module_from_spec(_spec4)
+sys.modules["vorth_plugin_keyed"] = _p4
+_spec4.loader.exec_module(_p4)
+check("a REAL key is never overwritten by the walk-in default",
+      os.environ.get("VORTH_API_KEY") == "real-key-untouched")
+if saved is not None:
+    os.environ["VORTH_API_KEY"] = saved
+else:
+    os.environ.pop("VORTH_API_KEY", None)
 
 # -- provider self-install (v0.4.1, first-field-install find) --------------
 import tempfile                                             # noqa: E402
