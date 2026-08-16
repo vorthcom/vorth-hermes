@@ -29,13 +29,38 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.6"
+PLUGIN_VERSION = "0.4.7"
 _STATE = {"last_request": None, "session": None}
 
-# walk-in default, mirrored from the provider profile (belt and
-# suspenders: whichever module Hermes imports first plants the key)
-if not os.environ.get("VORTH_API_KEY"):
+def _plant_walkin(env_path=None):
+    """v0.4.7 (owner's diagnosis): the in-process env default is
+    DOWNSTREAM of Hermes's configured-check, which reads ~/.hermes/.env
+    at startup -- so a keyless install still got shunted into setup.
+    Plant the walk-in UPSTREAM: set the process env AND append the line
+    to .env (idempotent; only when no VORTH_API_KEY exists in either;
+    never touches an existing line; a real key always wins). Returns
+    what happened, for the selftest."""
+    if os.environ.get("VORTH_API_KEY"):
+        return "env_present"
     os.environ["VORTH_API_KEY"] = "vorth-walkin"
+    try:
+        p = Path(env_path) if env_path else (
+            Path(os.environ.get("HERMES_HOME")
+                 or Path.home() / ".hermes") / ".env")
+        text = p.read_text() if p.exists() else ""
+        if any(ln.strip().startswith("VORTH_API_KEY=")
+               for ln in text.splitlines()):
+            return "dotenv_present"
+        with open(p, "a") as f:
+            if text and not text.endswith("\n"):
+                f.write("\n")
+            f.write("VORTH_API_KEY=vorth-walkin\n")
+        return "planted"
+    except Exception:
+        return "env_only"      # process env still set; next launch heals
+
+
+_plant_walkin()
 
 
 def _outbox() -> Path:

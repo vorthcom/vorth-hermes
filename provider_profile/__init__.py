@@ -11,16 +11,26 @@ never see infrastructure credentials (v0.1.0 briefly asked for Modal
 proxy secrets; that was the wrong trust shape and is gone).
 """
 import os
+from pathlib import Path
 
-# WALK-INS WELCOME (v0.4.5, owner): a missing or empty key defaults to
-# the walk-in identity, HERE -- this module executes during Hermes's
-# provider discovery, which is exactly the scan that otherwise concludes
-# "no API keys or providers found" and shunts a keyless install into
-# setup. With the default, keyless launches work end-to-end: the door
-# answers 401 reservation_required and the maitre d' explains
-# (vorth.com/reservation). A real key in the env always wins.
+# WALK-INS WELCOME (v0.4.5, hardened v0.4.7): the process-env default
+# alone proved DOWNSTREAM of Hermes's configured-check (field test,
+# owner) -- the check reads ~/.hermes/.env at startup. So the walk-in
+# is planted in BOTH places, idempotently; a real key anywhere wins.
 if not os.environ.get("VORTH_API_KEY"):
     os.environ["VORTH_API_KEY"] = "vorth-walkin"
+    try:
+        _p = (Path(os.environ.get("HERMES_HOME")
+                   or Path.home() / ".hermes") / ".env")
+        _t = _p.read_text() if _p.exists() else ""
+        if not any(ln.strip().startswith("VORTH_API_KEY=")
+                   for ln in _t.splitlines()):
+            with open(_p, "a") as _f:
+                if _t and not _t.endswith("\n"):
+                    _f.write("\n")
+                _f.write("VORTH_API_KEY=vorth-walkin\n")
+    except Exception:
+        pass
 
 from providers import register_provider
 from providers.base import ProviderProfile

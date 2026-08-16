@@ -254,15 +254,29 @@ def _api_request_error(**kw):
         import sys as _sys
         import time as _t
         _survey("signage_api_request_error", kw)
+        import re
         text = " ".join(str(kw.get(k) or "")
                         for k in ("error", "reason", "message"))
         open_at = _closed_open_at(text)
         reservation = _is_reservation(text)
-        if not open_at and not reservation:
+        warming = ("warming_up" in text or "machine is waking" in text)
+        if not open_at and not reservation and not warming:
             return None
         if _t.time() - _SIGN_STATE["last_sign_ts"] < 120:
             return None            # one sign per episode, not 3
         size = shutil.get_terminal_size((80, 24))
+        if warming and not open_at:
+            # the steam screen (static frame; the full 1 fps boiler
+            # animation arrives with the wait-loop wiring)
+            if _sys.stdout.isatty() and size.columns >= MIN_COLS \
+                    and size.lines >= MIN_LINES:
+                m = re.search(r"about (\d+) min", text)
+                frames = load_sign("WARMING_FRAMES")
+                if frames:
+                    _SIGN_STATE["last_sign_ts"] = _t.time()
+                    print("\n" + render_sign(
+                        frames[0], mins=(m.group(1) if m else "5")))
+            return None
         if reservation:
             if _sys.stdout.isatty() and size.columns >= MIN_COLS \
                     and size.lines >= MIN_LINES:

@@ -108,6 +108,35 @@ with _tf.TemporaryDirectory() as td2:
     check("small terminal: one-liner welcome, once also burned",
           r3 == "line" and "operator" in b3.getvalue())
 
+# -- walk-in planted UPSTREAM (v0.4.7: the .env file, not just process
+# env -- Hermes's configured-check reads .env before any plugin runs) ------
+with _tf.TemporaryDirectory() as td3:
+    envf = os.path.join(td3, ".env")
+    saved47 = os.environ.pop("VORTH_API_KEY", None)
+    import importlib.util as _il47
+    _s47 = _il47.spec_from_file_location(
+        "vorth_plugin_dotenv", os.path.join(HERE, "__init__.py"),
+        submodule_search_locations=[HERE])
+    _m47 = _il47.module_from_spec(_s47)
+    sys.modules["vorth_plugin_dotenv"] = _m47
+    _s47.loader.exec_module(_m47)
+    r = _m47._plant_walkin(env_path=envf)
+    # module import already set process env; clear to test the writer
+    os.environ.pop("VORTH_API_KEY", None)
+    r = _m47._plant_walkin(env_path=envf)
+    check("keyless: walk-in written to .env (upstream of the gate)",
+          r == "planted"
+          and "VORTH_API_KEY=vorth-walkin" in open(envf).read(), r)
+    os.environ.pop("VORTH_API_KEY", None)
+    r2 = _m47._plant_walkin(env_path=envf)
+    check("second plant is idempotent (dotenv_present, no duplicate line)",
+          r2 == "dotenv_present"
+          and open(envf).read().count("VORTH_API_KEY=") == 1, r2)
+    if saved47 is not None:
+        os.environ["VORTH_API_KEY"] = saved47
+    else:
+        os.environ.pop("VORTH_API_KEY", None)
+
 # -- sentinel core intact ---------------------------------------------------
 _spec2 = _il.spec_from_file_location(
     "vorth_plugin_pkg", os.path.join(HERE, "__init__.py"),
@@ -117,7 +146,7 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.6"
+          plug.PLUGIN_VERSION == "0.4.7"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")
