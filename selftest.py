@@ -120,18 +120,24 @@ with _tf.TemporaryDirectory() as td3:
     _m47 = _il47.module_from_spec(_s47)
     sys.modules["vorth_plugin_dotenv"] = _m47
     _s47.loader.exec_module(_m47)
-    r = _m47._plant_walkin(env_path=envf)
-    # module import already set process env; clear to test the writer
     os.environ.pop("VORTH_API_KEY", None)
     r = _m47._plant_walkin(env_path=envf)
-    check("keyless: walk-in written to .env (upstream of the gate)",
-          r == "planted"
-          and "VORTH_API_KEY=vorth-walkin" in open(envf).read(), r)
+    check("keyless: walk-in set in PROCESS ENV ONLY (v0.4.8 -- .env is "
+          "never written; the 0.4.7 write shadowed real keys)",
+          r == "process_env_only" and not os.path.exists(envf)
+          and os.environ.get("VORTH_API_KEY") == "vorth-walkin", r)
+    # RETRACTION: a 0.4.7-planted line is removed; other lines untouched
+    open(envf, "w").write("OTHER_KEY=x\nVORTH_API_KEY=vorth-walkin\n")
     os.environ.pop("VORTH_API_KEY", None)
     r2 = _m47._plant_walkin(env_path=envf)
-    check("second plant is idempotent (dotenv_present, no duplicate line)",
-          r2 == "dotenv_present"
-          and open(envf).read().count("VORTH_API_KEY=") == 1, r2)
+    body = open(envf).read()
+    check("a 0.4.7-planted .env line is RETRACTED, neighbors untouched",
+          "vorth-walkin" not in body and "OTHER_KEY=x" in body, body)
+    # a REAL key line in .env is never touched
+    open(envf, "w").write("VORTH_API_KEY=vorth-beta-REAL\n")
+    r3 = _m47._plant_walkin(env_path=envf)
+    check("a real .env key line survives the retraction pass",
+          "vorth-beta-REAL" in open(envf).read(), r3)
     if saved47 is not None:
         os.environ["VORTH_API_KEY"] = saved47
     else:
@@ -146,7 +152,7 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.7"
+          plug.PLUGIN_VERSION == "0.4.8"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")

@@ -29,35 +29,38 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.7"
+PLUGIN_VERSION = "0.4.8"
 _STATE = {"last_request": None, "session": None}
 
 def _plant_walkin(env_path=None):
-    """v0.4.7 (owner's diagnosis): the in-process env default is
-    DOWNSTREAM of Hermes's configured-check, which reads ~/.hermes/.env
-    at startup -- so a keyless install still got shunted into setup.
-    Plant the walk-in UPSTREAM: set the process env AND append the line
-    to .env (idempotent; only when no VORTH_API_KEY exists in either;
-    never touches an existing line; a real key always wins). Returns
-    what happened, for the selftest."""
-    if os.environ.get("VORTH_API_KEY"):
-        return "env_present"
-    os.environ["VORTH_API_KEY"] = "vorth-walkin"
+    """v0.4.8: PROCESS ENV ONLY, and it also RETRACTS v0.4.7's mistake.
+
+    The 0.4.7 version wrote `vorth-walkin` into ~/.hermes/.env -- but
+    Hermes's credential reader PREFERS .env over the shell env, so the
+    planted line shadowed the owner's real exported key (field find,
+    same day). The .env write was also useless for its stated purpose:
+    the first-run gate never reads unregistered env names; the real
+    keyless-launch fix is `model.provider: vorth` in config.yaml
+    (shipped in after-install). So: set the process default, and if a
+    0.4.7-planted line is present in .env, REMOVE it -- exactly that
+    line, nothing else."""
+    planted_line = "VORTH_API_KEY=vorth-walkin"
     try:
         p = Path(env_path) if env_path else (
             Path(os.environ.get("HERMES_HOME")
                  or Path.home() / ".hermes") / ".env")
-        text = p.read_text() if p.exists() else ""
-        if any(ln.strip().startswith("VORTH_API_KEY=")
-               for ln in text.splitlines()):
-            return "dotenv_present"
-        with open(p, "a") as f:
-            if text and not text.endswith("\n"):
-                f.write("\n")
-            f.write("VORTH_API_KEY=vorth-walkin\n")
-        return "planted"
+        if p.exists():
+            lines = p.read_text().splitlines()
+            kept = [ln for ln in lines if ln.strip() != planted_line]
+            if len(kept) != len(lines):
+                p.write_text("\n".join(kept)
+                             + ("\n" if kept else ""))
     except Exception:
-        return "env_only"      # process env still set; next launch heals
+        pass
+    if os.environ.get("VORTH_API_KEY"):
+        return "env_present"
+    os.environ["VORTH_API_KEY"] = "vorth-walkin"
+    return "process_env_only"
 
 
 _plant_walkin()
