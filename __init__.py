@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.8"
+PLUGIN_VERSION = "0.4.9"
 _STATE = {"last_request": None, "session": None}
 
 def _plant_walkin(env_path=None):

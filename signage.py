@@ -222,6 +222,30 @@ def reveal(text, budget_s=8.0, out=None, sleep=None):
             sleep(chunk_dt)
 
 
+def animate_frames(frames, cycles=2, frame_dt=0.7, out=None, sleep=None,
+                   **subs):
+    """The boiler animation (owner ask, 2026-08-16): cycle the rendered
+    frames IN PLACE via ANSI cursor-up redraw (merc's demo technique --
+    no clear-screen, no curses), ~4 s total at the defaults, ending on
+    the last frame. Runs synchronously inside the error hook, so no
+    other output can interleave mid-cycle. Pure against out/sleep."""
+    import sys as _sys
+    import time as _t
+    out = out or _sys.stdout
+    sleep = sleep or _t.sleep
+    rendered = [render_sign(f, **subs).strip("\n") for f in frames]
+    height = rendered[0].count("\n") + 1
+    seq = list(rendered) * cycles      # always ends on the last frame
+    out.write("\n")
+    for i, frame in enumerate(seq):
+        out.write(frame + "\n")
+        out.flush()
+        if i < len(seq) - 1:
+            sleep(frame_dt)
+            out.write(f"\x1b[{height}A")
+    out.write("\n")
+
+
 def welcome_once(marker_path, term_cols, term_lines, is_tty,
                  out=None, sleep=None):
     """The BBS welcome: ONCE per client, first successful connection
@@ -266,16 +290,17 @@ def _api_request_error(**kw):
             return None            # one sign per episode, not 3
         size = shutil.get_terminal_size((80, 24))
         if warming and not open_at:
-            # the steam screen (static frame; the full 1 fps boiler
-            # animation arrives with the wait-loop wiring)
+            # the steam screen -- ANIMATED (v0.4.9, owner ask): two
+            # cycles through the three boiler frames, in-place ANSI
+            # redraw, ~4 s, ending on the final frame
             if _sys.stdout.isatty() and size.columns >= MIN_COLS \
                     and size.lines >= MIN_LINES:
                 m = re.search(r"about (\d+) min", text)
                 frames = load_sign("WARMING_FRAMES")
                 if frames:
                     _SIGN_STATE["last_sign_ts"] = _t.time()
-                    print("\n" + render_sign(
-                        frames[0], mins=(m.group(1) if m else "5")))
+                    animate_frames(frames,
+                                   mins=(m.group(1) if m else "5"))
             return None
         if reservation:
             if _sys.stdout.isatty() and size.columns >= MIN_COLS \

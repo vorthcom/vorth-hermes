@@ -108,6 +108,21 @@ with _tf.TemporaryDirectory() as td2:
     check("small terminal: one-liner welcome, once also burned",
           r3 == "line" and "operator" in b3.getvalue())
 
+# -- the boiler animation (v0.4.9): in-place cycle, lossless, aligned -----
+bufA = io.StringIO()
+signage.animate_frames(frames, cycles=2, frame_dt=0.1, out=bufA,
+                       sleep=lambda s: None, mins=7)
+outA = bufA.getvalue()
+heights = {f.strip("\n").count("\n") + 1 for f in
+           (signage.render_sign(f, mins=7) for f in frames)}
+check("all warming frames share one height (in-place redraw invariant)",
+      len(heights) == 1, str(heights))
+check("animation cycles all frames and ends on the LAST one",
+      outA.count("\x1b[") == 2 * len(frames) - 1
+      and outA.rstrip().endswith(frames[-1].strip("\n").splitlines()[-1])
+      and "wakes in about 7 min" in outA,
+      f"redraws={outA.count(chr(27))}")
+
 # -- walk-in planted UPSTREAM (v0.4.7: the .env file, not just process
 # env -- Hermes's configured-check reads .env before any plugin runs) ------
 with _tf.TemporaryDirectory() as td3:
@@ -152,7 +167,7 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.8"
+          plug.PLUGIN_VERSION == "0.4.9"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")
