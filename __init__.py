@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.5"
+PLUGIN_VERSION = "0.4.6"
 _STATE = {"last_request": None, "session": None}
 
 # walk-in default, mirrored from the provider profile (belt and
@@ -140,11 +140,34 @@ def _pre_api_request(**kw):
         pass
 
 
+def _welcome_if_first(kw):
+    """Pack v2's BBS welcome: after the FIRST successful vorth response
+    ever on this client (marker in the outbox dir). 'Successful' is the
+    gate -- a walk-in bouncing off the maitre d' has not connected."""
+    try:
+        if not (kw.get("response") or kw.get("assistant_message")):
+            return             # no payload = not a successful connection
+        model = str(kw.get("model") or "")
+        provider = str(kw.get("provider") or "")
+        if "vorth" not in provider and "deepseek-v4-flash" not in model:
+            return
+        import shutil
+        import sys as _sys
+        from . import signage
+        marker = _outbox().parent / ".welcomed"
+        size = shutil.get_terminal_size((80, 24))
+        signage.welcome_once(str(marker), size.columns, size.lines,
+                             _sys.stdout.isatty())
+    except Exception:
+        pass
+
+
 def _post_api_request(**kw):
     try:
         _capsule("post_api_request", kw.keys(),
                  usage=kw.get("usage") or kw.get("token_buckets"),
                  model=kw.get("model"), provider=kw.get("provider"))
+        _welcome_if_first(kw)
         # v0.2.1 (payload survey, Tom's box 2026-08-15): detection LIVES
         # HERE -- transform_llm_output never fires in his loop, but this
         # hook fires every turn with the full assistant payload.

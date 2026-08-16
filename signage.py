@@ -80,16 +80,28 @@ def _assets_path(name):
                         "signage_assets", name)
 
 
+ASSET_FILES = ("signage_ascii_draft.txt",
+               "signage_v2_maitre_d_and_bbs.txt")   # pack v2, 2026-08-16
+
+
 def load_sign(name):
-    """CLOSED_SIGN / BUSY_SIGN -> str, WARMING_FRAMES -> list[str]."""
+    """CLOSED_SIGN / BUSY_SIGN / MAITRE_D_SIGN / WELCOME_BBS -> str,
+    WARMING_FRAMES -> list[str]. Searches every vendored pack file."""
     import re
-    src = open(_assets_path("signage_ascii_draft.txt")).read()
-    if name == "WARMING_FRAMES":
-        block = re.search(r'WARMING_FRAMES\s*=\s*\[(.*?)\n\]', src,
-                          re.S).group(1)
-        return re.findall(r'r"""(.*?)"""', block, re.S)
-    m = re.search(name + r'\s*=\s*r"""(.*?)"""', src, re.S)
-    return m.group(1) if m else None
+    for fn in ASSET_FILES:
+        try:
+            src = open(_assets_path(fn)).read()
+        except OSError:
+            continue
+        if name == "WARMING_FRAMES":
+            b = re.search(r'WARMING_FRAMES\s*=\s*\[(.*?)\n\]', src, re.S)
+            if b:
+                return re.findall(r'r"""(.*?)"""', b.group(1), re.S)
+            continue
+        m = re.search(name + r'\s*=\s*r"""(.*?)"""', src, re.S)
+        if m:
+            return m.group(1)
+    return None
 
 
 def render_sign(sign, **subs):
@@ -169,6 +181,70 @@ def _closed_open_at(text):
     return (m.group(1).strip() if m else "later")
 
 
+def _is_reservation(text):
+    """The maitre d's 401 -- fires ONLY for the reservation refusal
+    (unknown/absent key), never for a real auth fault on a live key:
+    the server's code + phrasing exist only on that path (pack v2's
+    trigger-gate rule, satisfied by construction)."""
+    return ("reservation_required" in text
+            or "do you have a reservation" in text)
+
+
+def reveal(text, budget_s=8.0, out=None, sleep=None):
+    """The 2400-baud draw (pack v2): the sign assembles in chunks,
+    top-to-bottom; handshake lines ('....' rows) type per-character.
+    budget_s bounds the WHOLE performance -- the spec's 45-60 s version
+    would stall the agent loop, so the default ships the flavor in ~8 s
+    (full-length joins the future config file). Pure function against
+    out/sleep for testing."""
+    import sys as _sys
+    import time as _t
+    out = out or _sys.stdout
+    sleep = sleep or _t.sleep
+    lines = text.split("\n")
+    typed = [i for i, ln in enumerate(lines) if "....." in ln]
+    plain = [i for i in range(len(lines)) if i not in typed]
+    n_chunks = max(1, len(plain))
+    typed_chars = sum(len(lines[i].rstrip()) for i in typed)
+    # split the budget: ~60% chunk cadence, ~40% typing
+    chunk_dt = (budget_s * 0.6) / n_chunks
+    char_dt = (budget_s * 0.4) / max(1, typed_chars)
+    for i, ln in enumerate(lines):
+        if i in typed:
+            for ch in ln.rstrip():
+                out.write(ch)
+                out.flush()
+                sleep(char_dt)
+            out.write("\n")
+        else:
+            out.write(ln + "\n")
+            out.flush()
+            sleep(chunk_dt)
+
+
+def welcome_once(marker_path, term_cols, term_lines, is_tty,
+                 out=None, sleep=None):
+    """The BBS welcome: ONCE per client, first successful connection
+    (pack v2: 'the joke dies if it plays twice'). Marker file is the
+    memory; small/non-TTY stages get the one-liner, which also burns
+    the once. Returns what was shown: 'sign' | 'line' | None."""
+    import os as _os
+    if _os.path.exists(marker_path):
+        return None
+    try:
+        open(marker_path, "w").write(str(int(__import__("time").time())))
+    except OSError:
+        return None            # cannot remember == never perform
+    if is_tty and term_cols >= MIN_COLS and term_lines >= MIN_LINES:
+        sign = load_sign("WELCOME_BBS")
+        if sign:
+            reveal("\n" + sign, budget_s=8.0, out=out, sleep=sleep)
+            return "sign"
+    (out or __import__("sys").stdout).write(
+        "Connected to Vorth -- welcome, operator.\n")
+    return "line"
+
+
 def _api_request_error(**kw):
     """v0.4.3: hang the BIG door-sign when the shop is closed. The
     error text is the one field proven to reach the client verbatim;
@@ -181,11 +257,20 @@ def _api_request_error(**kw):
         text = " ".join(str(kw.get(k) or "")
                         for k in ("error", "reason", "message"))
         open_at = _closed_open_at(text)
-        if not open_at:
+        reservation = _is_reservation(text)
+        if not open_at and not reservation:
             return None
         if _t.time() - _SIGN_STATE["last_sign_ts"] < 120:
-            return None            # one sign per closed-episode, not 3
+            return None            # one sign per episode, not 3
         size = shutil.get_terminal_size((80, 24))
+        if reservation:
+            if _sys.stdout.isatty() and size.columns >= MIN_COLS \
+                    and size.lines >= MIN_LINES:
+                sign = load_sign("MAITRE_D_SIGN")
+                if sign:
+                    _SIGN_STATE["last_sign_ts"] = _t.time()
+                    print("\n" + sign)
+            return None            # small stage: server one-liner stands
         kind, payload = sign_or_line("closed", size.columns, size.lines,
                                      _sys.stdout.isatty(),
                                      open_at=open_at)

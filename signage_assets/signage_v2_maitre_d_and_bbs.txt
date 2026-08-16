@@ -1,0 +1,92 @@
+# Signage pack v2 — maître d' (401) + BBS welcome (first connect)
+# 2026-08-16, Merc. Same house rules: machine codes untouched, art is the
+# message field, renderer centers {CENTER:} rows to frame interior (54 cols),
+# gates: TTY + >=60x18 else one-liner fallback.
+
+# ============================================================
+# MAITRE D' — 401 invalid/missing key (beta-floor reservation)
+# ============================================================
+# NOTE on rule fit: 401 is technically a client fault, and house rule 1 says
+# no jokes on client faults. This one gets an exception BY DESIGN because the
+# "fault" here is just "not in beta yet" — the joke carries routing info
+# (where to get a key), which makes it helpful, not bug-hiding. Real 401s
+# (malformed key on a live account) should keep the plain diagnostic text;
+# the gate for the art is: unknown/absent key = sign; known-but-broken = plain.
+
+MAITRE_D_SIGN = r"""
+   ┌──────────────────────────────────────────────────────┐
+   │                                                      │
+   │                  V O R T H   I N C .                 │
+   │              ──────────────────────────              │
+   │                  * BETA FLOOR *                      │
+   │                                                      │
+   │                      ___________                     │
+   │                     /  _______  \                    │
+   │                    |  /       \  |                   │
+   │                    | |  o   o  | |     good          │
+   │                    | |    _    | |     evening.      │
+   │                    |  \_______/  |                   │
+   │                    |     | |     |                   │
+   │                    |  ___|_|___  |                   │
+   │                    | / RESERVE \ |                   │
+   │                    | | DESK    | |                   │
+   │                    | |_________| |                   │
+   │                    |___|     |___|                   │
+   │                                                      │
+   │        HTTP 401 — do you have a reservation?         │
+   │        Seating on the beta floor is by               │
+   │        reservation only:                             │
+   │        https://vorth.com/reservation                 │
+   │                                                      │
+   └──────────────────────────────────────────────────────┘
+"""
+
+# One-liner fallback:
+#   HTTP 401: 🎩 Sorry — do you have a reservation? Seating on the beta
+#   floor is by reservation only: https://vorth.com/reservation
+
+# ============================================================
+# WELCOME — shown once, first successful connection per client
+# Retro BBS, 2400-baud soul.
+# ============================================================
+
+WELCOME_BBS = r"""
+   ┌──────────────────────────────────────────────────────┐
+   │                                                      │
+   │   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   │
+   │   ▓                                              ▓   │
+   │   ▓   V O R T H   O N L I N E   S E R V I C E    ▓   │
+   │   ▓                                              ▓   │
+   │   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   │
+   │                                                      │
+   │      CONNECT 57600/ARQ .......... CARRIER DETECT     │
+   │      PROTOCOL: TOKEN-8N1 ......... HANDSHAKE OK      │
+   │      REFINERY LINK ............. ESTABLISHED         │
+   │                                                      │
+   │      Welcome, operator. You are caller #____.        │
+   │      Type your request. Mind the ropes.              │
+   │                                                      │
+   │      > nodes up ..... slick . sharp                  │
+   │      > sysop ........ merc (on duty)                 │
+   │      > msgs ......... see /status for the board      │
+   │                                                      │
+   │   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   │
+   │                                                      │
+   └──────────────────────────────────────────────────────┘
+"""
+
+# ANIMATION spec (WELCOME_BBS): the retro draw.
+#   - The full sign renders like a 2400-baud terminal: characters appear in
+#     chunks, not instantly. Implementation: split the frame into ~40-60
+#     equal CHUNKS of characters and reveal one chunk every ~1s (Tom's "one
+#     chunk a second"), top to bottom. Whole sign assembles over ~45-60s.
+#   - For extra period flavor the CONNECT/PROTOCOL/REFINERY lines can type
+#     character-by-character (30-50ms/char) while the border fills in chunks
+#     around them — modem handshake lines SHOULD feel typed.
+#   - The "caller #____" blank can slot a real counter if the server ever
+#     exposes one; leave the blank if not (honest absence, house rules).
+#   - Shown ONCE per client (first successful connection): extension stores
+#     a sentinel (~/.vorth_welcomed or in config state). Never on retries,
+#     never on every boot — the joke dies if it plays twice.
+#   - Skip conditions: not a TTY, terminal < 60x18, or VORTH_QUIET=1 →
+#     print one line instead: "Connected to Vorth — welcome, operator."

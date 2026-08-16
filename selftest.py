@@ -70,6 +70,44 @@ kind, payload = signage.sign_or_line("some_client_fault", 100, 40, True)
 check("non-operational code gets NO costume (the fun never lies)",
       payload is None, str((kind, payload)))
 
+# -- pack v2: the maitre d' and the BBS welcome ----------------------------
+md = signage.load_sign("MAITRE_D_SIGN")
+bbs = signage.load_sign("WELCOME_BBS")
+check("maitre d' + BBS welcome load from pack v2",
+      bool(md) and bool(bbs))
+check("both v2 signs hold alignment",
+      len(box_widths(md)) == 1 and len(box_widths(bbs)) == 1,
+      f"md={box_widths(md)} bbs={box_widths(bbs)}")
+check("reservation refusal detected, closed copy NOT confused for it",
+      signage._is_reservation("... do you have a reservation? ...")
+      and not signage._is_reservation("Sorry, we're CLOSED -- thank you"))
+
+import io                                                   # noqa: E402
+buf = io.StringIO()
+signage.reveal(bbs, budget_s=0.01, out=buf, sleep=lambda s: None)
+check("reveal() delivers the complete sign (chunked, typed, lossless)",
+      "V O R T H   O N L I N E" in buf.getvalue()
+      and "CARRIER DETECT" in buf.getvalue()
+      and buf.getvalue().count("\n") >= bbs.count("\n"))
+
+import tempfile as _tf                                      # noqa: E402
+with _tf.TemporaryDirectory() as td2:
+    mk = os.path.join(td2, ".welcomed")
+    b1, b2 = io.StringIO(), io.StringIO()
+    r1 = signage.welcome_once(mk, 100, 40, True, out=b1,
+                              sleep=lambda s: None)
+    r2 = signage.welcome_once(mk, 100, 40, True, out=b2,
+                              sleep=lambda s: None)
+    check("welcome plays ONCE (sign, then never again -- the joke dies "
+          "if it plays twice)",
+          r1 == "sign" and r2 is None and b2.getvalue() == "")
+    mk2 = os.path.join(td2, ".welcomed2")
+    b3 = io.StringIO()
+    r3 = signage.welcome_once(mk2, 50, 12, True, out=b3,
+                              sleep=lambda s: None)
+    check("small terminal: one-liner welcome, once also burned",
+          r3 == "line" and "operator" in b3.getvalue())
+
 # -- sentinel core intact ---------------------------------------------------
 _spec2 = _il.spec_from_file_location(
     "vorth_plugin_pkg", os.path.join(HERE, "__init__.py"),
@@ -79,7 +117,7 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.5"
+          plug.PLUGIN_VERSION == "0.4.6"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")
