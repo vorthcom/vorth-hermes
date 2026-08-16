@@ -1,4 +1,4 @@
 name: vorth-provider
-version: 0.4.12
+version: 0.4.13
 manifest_version: 1
 description: "Vorth beta model-provider profile (installed by the vorth plugin)"

@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.12"
+PLUGIN_VERSION = "0.4.13"
 _STATE = {"last_request": None, "session": None}
 
 def _plant_walkin(env_path=None):
@@ -154,6 +154,28 @@ def _resp_like(text):
                                      "content": text}}]}
 
 
+def _filter_unfounded(events, req):
+    """v0.4.13 (Step session, second corpus cycle): the pre-hook passes
+    tool_count but NEVER the tools list (conversation_loop:2695), so
+    the client cannot know the offered set -- and 13/13 d3 fires on
+    Tom's Step session were `tool_not_offered` against Hermes's own
+    internal tools. No evidence, no claim: when the captured request
+    has no tools list, tool_not_offered problems are dropped;
+    parse/schema problems (which judge the CALL itself) survive."""
+    if (req or {}).get("tools"):
+        return events
+    out = []
+    for e in events:
+        if e.get("detector") != "d3_malformed_tool_call":
+            out.append(e)
+            continue
+        kept = [p for p in e.get("problems") or []
+                if p.get("problem") != "tool_not_offered"]
+        if kept:
+            out.append({**e, "problems": kept})
+    return out
+
+
 def _minimize_request(req, tail=2, max_chars=4000):
     """v0.4.11 EVIDENCE MINIMIZATION for the SHIPPED copy (the local
     outbox keeps the full capsule -- your box, your data). Measured
@@ -171,9 +193,15 @@ def _minimize_request(req, tail=2, max_chars=4000):
             if isinstance(c, str) and len(c) > max_chars:
                 mm["content"] = c[:max_chars] + "...[truncated]"
             out.append(mm)
-        return {"messages": out,
+        mini = {"messages": out,
                 "n_messages_total": len(msgs),
                 "_evidence": "minimized_v1"}
+        tools = (req or {}).get("tools") or []
+        if tools:
+            mini["tool_names"] = [
+                ((t.get("function") or {}).get("name")
+                 if isinstance(t, dict) else str(t)) for t in tools]
+        return mini
     except Exception:
         return {"_evidence": "minimize_failed"}
 
@@ -302,7 +330,7 @@ def _post_api_request(**kw):
                              "finish_reason": kw.get("finish_reason")}]}
         if resp:
             req = _STATE.get("last_request") or {}
-            events = detect_all(req, resp)
+            events = _filter_unfounded(detect_all(req, resp), req)
             if placeholders:
                 events = [e for e in events
                           if e.get("detector") != "d3_malformed_tool_call"]
@@ -327,7 +355,8 @@ def _transform_llm_output(text=None, **kw):
             return None
         if isinstance(text, str) and text.strip():
             req = _STATE.get("last_request") or {}
-            events = detect_all(req, _resp_like(text))
+            events = _filter_unfounded(
+                detect_all(req, _resp_like(text)), req)
             if events:
                 cap = dict(events=events, text_chars=len(text),
                            request_captured=bool(req),

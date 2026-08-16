@@ -201,7 +201,7 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.12"
+          plug.PLUGIN_VERSION == "0.4.13"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")
@@ -330,5 +330,23 @@ with tempfile.TemporaryDirectory() as td6:
           plug._STATE.get("vorth_turn") is True and outbox_lines() >= 1)
     os.environ.pop("VORTH_CAPSULE_DIR", None)
 
+# -- v0.4.13: unfounded tool_not_offered dropped (Step session cycle) ------
+ev = [{"detector": "d3_malformed_tool_call",
+       "problems": [{"problem": "tool_not_offered", "name": "read_file"}]}]
+check("d3 tool_not_offered with UNKNOWN offered-set -> dropped entirely",
+      plug._filter_unfounded(ev, {"messages": []}) == [])
+ev2 = [{"detector": "d3_malformed_tool_call",
+        "problems": [{"problem": "args_unparseable", "index": 0},
+                     {"problem": "tool_not_offered", "name": "x"}]}]
+out = plug._filter_unfounded(ev2, {})
+check("parse problems SURVIVE the filter (they judge the call itself)",
+      len(out) == 1 and out[0]["problems"] == [{"problem":
+                                               "args_unparseable",
+                                               "index": 0}])
+check("with a REAL offered-set, tool_not_offered is kept",
+      plug._filter_unfounded(ev, {"tools": [{"function":
+                                            {"name": "other"}}]}) == ev)
+
 print(f"PLUGIN SELFTEST {P} PASS / {F} FAIL")
 sys.exit(1 if F else 0)
+
