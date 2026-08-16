@@ -1,5 +1,4 @@
 name: vorth-provider
-kind: model-provider
-version: 0.1.0
-description: Vorth beta surface provider (model-team owned; beta-deepseek-v4-flash-0731)
-author: vorth model team
+version: 0.4.3
+manifest_version: 1
+description: "Vorth beta model-provider profile (installed by the vorth plugin)"

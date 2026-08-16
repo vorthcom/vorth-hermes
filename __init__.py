@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.2"
+PLUGIN_VERSION = "0.4.3"
 _STATE = {"last_request": None, "session": None}
 
 
@@ -290,3 +290,11 @@ def register(ctx) -> None:
     ctx.register_hook("api_request_error", _api_request_error)
     ctx.register_hook("on_session_start", _on_session_start)
     ctx.register_hook("on_session_end", _on_session_end)
+    # v0.4.3: the signage costume layer -- OPT-IN (VORTH_SIGNAGE=1, the
+    # gate lives inside signage.register); fenced so a costume bug can
+    # never take the sentinel down with it
+    try:
+        from . import signage
+        signage.register(ctx, capsule=_capsule)
+    except Exception:
+        pass

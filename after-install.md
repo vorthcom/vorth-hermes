@@ -4,6 +4,9 @@ Two steps and you're live on the beta:
 
 **1. Add the provider to your `config.yaml`:**
 
+No key yet? Use `VORTH_API_KEY=vorth-walkin` for now — the maître d'
+will explain how reservations work when you knock.
+
 ```yaml
 providers:
   vorth:
@@ -37,5 +40,6 @@ free: your sessions are the sensor network.
 
 Updating later: `hermes plugins update vorth` (or the dashboard button).
 
-Optional fun: `VORTH_SIGNAGE=1` enables the front-of-house error
-costumes (see `signage.py` — copy desk at the top of the file).
+Optional fun: `VORTH_SIGNAGE=1` enables the front-of-house costumes:
+the big CLOSED door-sign on closed-hours refusals (terminal ≥ 60×18),
+one-liner fallbacks otherwise. Copy desk at the top of `signage.py`.

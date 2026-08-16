@@ -25,6 +25,10 @@ RULES (so the fun never lies):
 import os
 
 # ---- THE COPY DESK (edit freely; keep it short, one line lands best) ----
+# v0.4.3 (owner, 2026-08-16): CLOSED one-liner simplified to MATCH the
+# door-sign's voice -- pure sign, no GPU/cost explainer (the graphic went
+# pure door-sign in the pack's v2; the one-liner had never been
+# backported).
 COPY = {
     # server scaled to zero; the machine is waking. retry_after passes
     # through from the server header when present.
@@ -36,10 +40,8 @@ COPY = {
     ],
     # outside declared beta hours; nothing is booting on purpose.
     "closed": [
-        "\U0001f3ea Sorry, we're CLOSED. (Yes, a website with opening "
-        "hours. It's a whole thing.) Doors open at {open_at}.",
-        "\U0001f319 The shop is dark and the sign is flipped. Come back "
-        "at {open_at} -- the machines sleep so the bill does too.",
+        "\U0001f3ea Sorry, we're CLOSED -- thank you, please come "
+        "again! Doors open at {open_at}.",
     ],
     # upstream at capacity
     "upstream_busy": [
@@ -135,27 +137,95 @@ def sign_or_line(code, term_cols, term_lines, is_tty,
     return "line", _dress(code, retry_after_s, open_at)
 
 
+_SIGN_STATE = {"last_sign_ts": 0.0, "capsule": None}
+
+
+def _survey(kind, kw):
+    """Discovery-mode breadcrumb: record the payload shape (keys + a
+    short repr of error-ish fields, never message content) so the next
+    release parses specimens instead of guesses."""
+    cap = _SIGN_STATE.get("capsule")
+    if cap is None:
+        return
+    try:
+        snip = {k: repr(kw[k])[:120] for k in kw
+                if k in ("error", "reason", "status", "status_code",
+                         "classification", "exception")}
+        cap(kind, kw.keys(), fields=snip)
+    except Exception:
+        pass
+
+
+def _closed_open_at(text):
+    """open_at string when the text is a closed refusal, else None."""
+    import re
+    if "CLOSED" not in text:
+        return None
+    m = re.search(r"[Dd]oors open at ([^.\n]+)", text)
+    return (m.group(1).strip() if m else "later")
+
+
 def _api_request_error(**kw):
-    """Observe an API error; if it's operational, remember the costume
-    for the classification hook. Discovery-mode: field names verified
-    against the payload survey before any rewrite ships."""
-    # TODO(tom): pull status/code/Retry-After out of kw per the outbox
-    # payload survey (error/reason fields), stash on module state.
+    """v0.4.3: hang the BIG door-sign when the shop is closed. The
+    error text is the one field proven to reach the client verbatim;
+    everything else is surveyed for the next release."""
+    try:
+        import shutil
+        import sys as _sys
+        import time as _t
+        _survey("signage_api_request_error", kw)
+        text = " ".join(str(kw.get(k) or "")
+                        for k in ("error", "reason", "message"))
+        open_at = _closed_open_at(text)
+        if not open_at:
+            return None
+        if _t.time() - _SIGN_STATE["last_sign_ts"] < 120:
+            return None            # one sign per closed-episode, not 3
+        size = shutil.get_terminal_size((80, 24))
+        kind, payload = sign_or_line("closed", size.columns, size.lines,
+                                     _sys.stdout.isatty(),
+                                     open_at=open_at)
+        if kind == "sign":
+            _SIGN_STATE["last_sign_ts"] = _t.time()
+            print("\n" + payload)
+    except Exception:
+        pass
     return None
 
 
 def _transform_api_error_classification(**kw):
-    """Where the rewrite happens: return the classification dict with
-    the human message swapped for _dress(code), everything else
-    untouched. Until wired, observe-only."""
-    # TODO(tom): swap message text when code in OPERATIONAL_CODES;
-    # never touch code/status/retryability fields.
-    return None
+    """De-noise attempt (discovery-mode): a CLOSED shop is not a
+    transient fault -- retrying it 3x is pure noise. If the payload
+    hands us a dict with a recognizable retry switch AND the error is
+    closed-shaped, flip it off and shorten the message. Acts ONLY on
+    confident parses; otherwise observes and surveys."""
+    try:
+        _survey("signage_error_classification", kw)
+        cls = kw.get("classification")
+        if not isinstance(cls, dict):
+            return None
+        text = " ".join(str(v) for v in cls.values()
+                        if isinstance(v, str))
+        open_at = _closed_open_at(text)
+        if not open_at:
+            return None
+        out = dict(cls)
+        for flag in ("retryable", "should_retry", "retry"):
+            if flag in out:
+                out[flag] = False
+        for fld in ("message", "detail"):
+            if isinstance(out.get(fld), str):
+                out[fld] = (f"\U0001f3ea CLOSED -- doors open at "
+                            f"{open_at} (see sign)")
+        return out
+    except Exception:
+        return None
 
 
-def register(ctx):
+def register(ctx, capsule=None):
     if os.environ.get("VORTH_SIGNAGE") != "1":
         return
+    _SIGN_STATE["capsule"] = capsule
     ctx.register_hook("api_request_error", _api_request_error)
     ctx.register_hook("transform_api_error_classification",
                       _transform_api_error_classification)
