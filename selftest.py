@@ -201,7 +201,7 @@ try:
     sys.modules["vorth_plugin_pkg"] = plug
     _spec2.loader.exec_module(plug)
     check("plugin package imports; version + detectors declared",
-          plug.PLUGIN_VERSION == "0.4.11"
+          plug.PLUGIN_VERSION == "0.4.12"
           and bool(plug.FILTERS_VERSION), plug.PLUGIN_VERSION)
 except Exception as e:
     check("plugin package imports", False, f"{type(e).__name__}: {e}")
@@ -289,6 +289,46 @@ check("shipped request evidence: last-2 tail, truncated, counted, marked",
       len(m["messages"]) == 2 and m["n_messages_total"] == 30
       and m["_evidence"] == "minimized_v1"
       and len(_json.dumps(m)) < 12000, f"{len(_json.dumps(m))}B")
+
+# -- v0.4.12: THE PROVIDER GATE (owner audit: inert for foreign traffic) --
+with tempfile.TemporaryDirectory() as td6:
+    os.environ["VORTH_CAPSULE_DIR"] = td6
+
+    def outbox_lines():
+        import glob as _g
+        return sum(sum(1 for _ in open(p))
+                   for p in _g.glob(os.path.join(td6, "*.jsonl")))
+
+    # foreign turn: pre must capture nothing, post must write nothing,
+    # even for a GENUINE empty answer
+    plug._pre_api_request(provider="anthropic", model="claude-x",
+                          request_messages=[{"role": "user",
+                                             "content": "secret"}])
+    check("foreign pre: no state capture, no breadcrumb",
+          plug._STATE.get("vorth_turn") is False
+          and plug._STATE.get("last_request") is None
+          and outbox_lines() == 0)
+    plug._post_api_request(provider="anthropic", model="claude-x",
+                           assistant_message=_AM(),
+                           assistant_tool_call_count=0,
+                           finish_reason="stop")
+    check("foreign post: NOTHING written even for a genuine empty",
+          outbox_lines() == 0)
+    r = plug._pre_tool_call(tool_name="t", arguments="{not json",
+                            provider="anthropic")
+    check("foreign malformed tool call: NEVER blocked, nothing logged",
+          r is None and outbox_lines() == 0)
+    # vorth turn: everything works as before
+    plug._pre_api_request(provider="vorth", model="x",
+                          request_messages=[{"role": "user",
+                                             "content": "hi"}])
+    r = plug._pre_tool_call(tool_name="t", arguments="{not json",
+                            provider="vorth")
+    check("vorth malformed tool call: still blocked",
+          isinstance(r, dict) and r.get("action") == "block")
+    check("vorth pre: breadcrumb written",
+          plug._STATE.get("vorth_turn") is True and outbox_lines() >= 1)
+    os.environ.pop("VORTH_CAPSULE_DIR", None)
 
 print(f"PLUGIN SELFTEST {P} PASS / {F} FAIL")
 sys.exit(1 if F else 0)

@@ -29,7 +29,7 @@ from pathlib import Path
 from .vorth_filters import (FILTERS_VERSION, detect_all, echoes_request,
                             scan_words)
 
-PLUGIN_VERSION = "0.4.11"
+PLUGIN_VERSION = "0.4.12"
 _STATE = {"last_request": None, "session": None}
 
 def _plant_walkin(env_path=None):
@@ -179,8 +179,28 @@ def _minimize_request(req, tail=2, max_chars=4000):
 
 
 # ---- hooks (all observe-only; all **kwargs; all fenced) -------------------
+def _is_vorth_provider(kw):
+    """v0.4.12 THE PROVIDER GATE (owner audit: 'are we 200% sure the
+    capsules machinery is completely inert when the provider is not
+    vorth?' -- it was NOT; three leaks). PROVIDER NAME ONLY, never the
+    model slug: matching 'deepseek-v4-flash' would misclassify the
+    same model served by a competitor as ours. Hermes passes `provider`
+    on both pre and post hooks (conversation_loop call sites)."""
+    return "vorth" in str(kw.get("provider") or "").lower()
+
+
 def _pre_api_request(**kw):
     try:
+        # the gate is decided at the turn's start and carried in state
+        # for hooks whose payloads lack a provider field
+        vorth = _is_vorth_provider(kw)
+        _STATE["vorth_turn"] = vorth
+        if not vorth:
+            # COMPLETELY INERT for foreign providers: no state capture
+            # (a stale vorth request must never attach to a foreign
+            # response), no breadcrumb, nothing.
+            _STATE["last_request"] = None
+            return
         msgs = (kw.get("request_messages") or kw.get("messages")
                 or kw.get("sanitized_messages"))
         if msgs:
@@ -226,6 +246,8 @@ def _welcome_daily_at_connect():
 
 def _post_api_request(**kw):
     try:
+        if not _is_vorth_provider(kw):
+            return                      # inert for foreign providers
         _capsule("post_api_request", kw.keys(),
                  usage=kw.get("usage") or kw.get("token_buckets"),
                  model=kw.get("model"), provider=kw.get("provider"))
@@ -297,8 +319,12 @@ def _post_api_request(**kw):
 
 def _transform_llm_output(text=None, **kw):
     """Final visible text: run D2/D4-style detection. Returns None ALWAYS
-    (observe-only; a non-None return would REPLACE the output)."""
+    (observe-only; a non-None return would REPLACE the output).
+    v0.4.12: gated on the turn's provider (carried from pre -- this
+    hook's payload has no provider field)."""
     try:
+        if not _STATE.get("vorth_turn"):
+            return None
         if isinstance(text, str) and text.strip():
             req = _STATE.get("last_request") or {}
             events = detect_all(req, _resp_like(text))
@@ -327,6 +353,12 @@ def _pre_tool_call(tool_name=None, arguments=None, **kw):
     capsuled and shipped."""
     blocked = False
     try:
+        # v0.4.12: NEVER touch a foreign provider's tool calls -- the
+        # ungated default-on block could modify non-vorth agent
+        # behavior (the worst of the three audit leaks). Unknown turn
+        # state fails open to OBSERVE, never to interception.
+        if not _STATE.get("vorth_turn"):
+            return None
         arguments = arguments if arguments is not None else kw.get("args")
         parse_ok = True
         if isinstance(arguments, str):
@@ -365,6 +397,10 @@ def _api_request_error(**kw):
 
 def _on_session_start(**kw):
     _STATE["session"] = kw.get("session_id") or str(int(time.time()))
+    # v0.4.12: session machinery only runs when this Hermes is actually
+    # pointed at vorth -- a plugin installed but unused stays silent
+    if not _vorth_is_configured_provider():
+        return
     _capsule("session_start", kw.keys(), session=_STATE["session"])
     _welcome_daily_at_connect()
     # v0.4.2: a session-start ping ships home so the ACK can carry the
